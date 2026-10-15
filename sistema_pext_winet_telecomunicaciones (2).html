@@ -1,0 +1,1863 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WINET • Sistema PEXT de Averías</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        winet: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                            950: '#052e16',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js for Advanced Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for Excel Import -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .dark ::-webkit-scrollbar-thumb { background: #1f2937; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #374151; }
+
+        * { transition-property: background-color, border-color, color, fill, stroke; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 200ms; }
+        
+        @keyframes pulseGlow {
+            0%, 100% { filter: drop-shadow(0 0 15px rgba(34,197,94,0.6)); }
+            50% { filter: drop-shadow(0 0 25px rgba(34,197,94,0.9)); }
+        }
+        .animate-logo { animation: pulseGlow 3s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-[#020503] dark:text-[#e2e8f0] min-h-screen antialiased selection:bg-winet-500 selection:text-white" id="app-body">
+
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Dynamic views injected here -->
+    </div>
+
+    <!-- Global Modal Container -->
+    <div id="modal-container"></div>
+
+    <!-- Global Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        const STORAGE_KEYS = {
+            USERS: 'winet_pext_users_v7',
+            TICKETS: 'winet_pext_tickets_v6',
+            CATALOGS: 'winet_pext_catalogs_v6',
+            FORM_FIELDS: 'winet_pext_form_fields_v6',
+            CURRENT_USER: 'winet_pext_current_user_v7',
+            THEME: 'winet_pext_theme_v6',
+            RECYCLED_IDS: 'winet_pext_recycled_ids_v3'
+        };
+
+        const DEFAULT_USERS = [
+            { id: 'u1', name: 'Ing. Carlos Mendoza', email: 'carlos.mendoza@winet.pe', pass: 'winet2026', role: 'admin', phone: '+51 987654321', docId: '45879621', avatar: 'https://placehold.co/150x150/16a34a/ffffff?text=CM' },
+            { id: 'u2', name: 'Ana Torres', email: 'ana.torres@winet.pe', pass: 'noc123', role: 'noc', phone: '+51 912345678', docId: '09876543', avatar: 'https://placehold.co/150x150/3b82f6/ffffff?text=AT' },
+            { id: 'u3', name: 'Mateo Aparcana', email: 'maparcana@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 997596056', docId: '10290907', avatar: 'https://placehold.co/150x150/f59e0b/ffffff?text=MA' },
+            { id: 'u4', name: 'Jeff Cochaches', email: 'jcochaches@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 936112828', docId: '70110653', avatar: 'https://placehold.co/150x150/a855f7/ffffff?text=JC' },
+            { id: 'u5', name: 'Miguel Rossell', email: 'mrossell@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 925133226', docId: '76083672', avatar: 'https://placehold.co/150x150/10b981/ffffff?text=MR' },
+            { id: 'u6', name: 'Nilton Eduardo', email: 'neduardo@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 972058354', docId: '41667067', avatar: 'https://placehold.co/150x150/6366f1/ffffff?text=NE' },
+            { id: 'u7', name: 'Josue Nuñez', email: 'jnunez@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 972058921', docId: '70536999', avatar: 'https://placehold.co/150x150/ec4899/ffffff?text=JN' },
+            { id: 'u8', name: 'Humberto Vilchez', email: 'hvilchez@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 902638686', docId: '72920949', avatar: 'https://placehold.co/150x150/14b8a6/ffffff?text=HV' },
+            { id: 'u9', name: 'Luis Rodriguez', email: 'lrodriguez@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 924812066', docId: '41713310', avatar: 'https://placehold.co/150x150/f97316/ffffff?text=LR' },
+            { id: 'u10', name: 'Deyvi Inga', email: 'dinga@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 936573902', docId: '76676010', avatar: 'https://placehold.co/150x150/84cc16/ffffff?text=DI' },
+            { id: 'u11', name: 'Kevin Navarro', email: 'knavarro@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 954302765', docId: '48448572', avatar: 'https://placehold.co/150x150/06b6d4/ffffff?text=KN' },
+            { id: 'u12', name: 'Cristian Torres', email: 'ctorres@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 906119527', docId: '60101051', avatar: 'https://placehold.co/150x150/eab308/ffffff?text=CT' },
+            { id: 'u13', name: 'Jose Tarazona', email: 'jtarazona@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 933896585', docId: '001931977', avatar: 'https://placehold.co/150x150/3b82f6/ffffff?text=JT' },
+            { id: 'u14', name: 'Diego Vasquez', email: 'dvasquez@winet.pe', pass: 'winet2026', role: 'supervisor', phone: '+51 936112341', docId: '47613218', avatar: 'https://placehold.co/150x150/ef4444/ffffff?text=DV' }
+        ];
+
+        const DEFAULT_CATALOGS = {
+            contractors: ['ARKTURIAS', 'FIBERTEK S.A.C.', 'TELECONECTA EIRL', 'REDES ANDINAS S.A.', 'WINET FIELD OPS'],
+            causes: [
+                'Corte de FO por baja altura por cruce de vehículo',
+                'Corte de fibra óptica por cambio de poste',
+                'Corte de fibra óptica por vandalismo',
+                'Corte de FO por obras civiles de terceros',
+                'Atenuación severa en conector CTO por humedad',
+                'Falla de energía en nodo principal',
+                'Rotura de cable drop por caída de árbol'
+            ],
+            solutions: [
+                'Empalme de fusión de fibra óptica y ordenamiento en mufa',
+                'Instalación de nuevo tramo de cable drop y conectores SC/APC',
+                'Reemplazo de splitter óptico en CTO siniestrada',
+                'Reconfiguración y normalización de potencias ópticas',
+                'Reparación de bandeja de acometida y sangrado de FO'
+            ],
+            materials: [
+                { name: 'Conector SC/APC', unit: 'Unidades' },
+                { name: 'Cable Drop 1 Hilo LSZH', unit: 'Metros' },
+                { name: 'Mufa Terminal 24F', unit: 'Piezas' },
+                { name: 'Splice Protector (Mangas)', unit: 'Unidades' },
+                { name: 'Precintos de Nylon', unit: 'Paquetes' }
+            ]
+        };
+
+        const DEFAULT_FORM_FIELDS = {
+            registration: [
+                { id: 'ticketType', label: 'Tipo de Avería', type: 'select', options: 'Avería Clientes Loss, Tickets de Backbone, Tickets de Requerimiento', required: true, active: true },
+                { id: 'category', label: 'Categoría', type: 'select', options: 'AVERIA, BACKBONE, REQUERIMIENTO', required: true, active: true },
+                { id: 'reportArea', label: 'Área que Reporta', type: 'select', options: 'Calidad Operativa, NOC, Campo', required: true, active: true },
+                { id: 'affectedClients', label: 'Clientes Afectados', type: 'number', required: true, active: true },
+                { id: 'elementType', label: 'Tipo de Elemento', type: 'text', required: true, active: true },
+                { id: 'elementCode', label: 'Código del Elemento', type: 'text', required: true, active: true },
+                { id: 'nodo', label: 'Nodo', type: 'text', required: true, active: true },
+                { id: 'project', label: 'Proyecto', type: 'text', required: true, active: true },
+                { id: 'distrito', label: 'Distrito', type: 'text', required: true, active: true },
+                { id: 'zone', label: 'Zona', type: 'text', required: true, active: true },
+                { id: 'lat', label: 'Latitud GPS', type: 'number', required: true, active: true },
+                { id: 'lng', label: 'Longitud GPS', type: 'number', required: true, active: true },
+                { id: 'details', label: 'Detalles / Rotulado', type: 'textarea', required: true, active: true }
+            ],
+            closure: [
+                { id: 'startTime', label: 'Hora Inicio', type: 'time', required: true, active: true },
+                { id: 'endTime', label: 'Hora Fin', type: 'time', required: true, active: true },
+                { id: 'cause', label: 'Causa Raíz', type: 'select_causes', required: true, active: true },
+                { id: 'solution', label: 'Solución Aplicada', type: 'select_solutions', required: true, active: true },
+                { id: 'materialsUsed', label: 'Materiales Utilizados', type: 'materials_list', required: false, active: true }
+            ],
+            gis_report: [
+                { id: 'gis_status', label: 'Estado de Actualización', type: 'select', options: 'Actualizado, Pendiente, Requiere Visita', required: true, active: true },
+                { id: 'gis_kmz', label: 'URL / Ruta KMZ', type: 'text', required: false, active: true },
+                { id: 'gis_obs', label: 'Observaciones Catastro', type: 'textarea', required: false, active: true }
+            ],
+            fuel_control: [
+                { id: 'fuel_gal', label: 'Galones Surtidos', type: 'number', required: true, active: true },
+                { id: 'fuel_km', label: 'Kilometraje Vehículo', type: 'number', required: true, active: true },
+                { id: 'fuel_ticket', label: 'Nº Boleta / Factura', type: 'text', required: true, active: true }
+            ]
+        };
+
+        if (!localStorage.getItem(STORAGE_KEYS.USERS)) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_USERS));
+        if (!localStorage.getItem(STORAGE_KEYS.CATALOGS)) localStorage.setItem(STORAGE_KEYS.CATALOGS, JSON.stringify(DEFAULT_CATALOGS));
+        if (!localStorage.getItem(STORAGE_KEYS.FORM_FIELDS)) localStorage.setItem(STORAGE_KEYS.FORM_FIELDS, JSON.stringify(DEFAULT_FORM_FIELDS));
+        if (!localStorage.getItem(STORAGE_KEYS.RECYCLED_IDS)) localStorage.setItem(STORAGE_KEYS.RECYCLED_IDS, JSON.stringify({ AVE: [], BKN: [], RQM: [] }));
+        
+        let currentTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
+        if (currentTheme === 'light') { document.documentElement.classList.remove('dark'); } else { document.documentElement.classList.add('dark'); }
+
+        function getUsers() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)); }
+        function saveUsers(u) { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(u)); }
+
+        function getTickets() {
+            const raw = localStorage.getItem(STORAGE_KEYS.TICKETS);
+            if (!raw) {
+                const initial = [
+                    { id: 'AVE-24953', requestDate: '2026-09-28T10:16', createdAt: new Date().toISOString(), ticketType: 'Avería Clientes Loss', category: 'AVERIA', reportArea: 'Calidad Operativa', affectedClients: 3, elementType: 'CAJA CTO', elementCode: '2026092820000239', coords: { lat: -12.9897768, lng: -77.0909098 }, nodo: 'NODO HUARAL', project: 'HUARAL 2', distrito: 'HUARAL', zone: 'LIMA PROVINCIA', details: 'ROTULADO CTO:\nWN-15202-1491957', status: 'pendiente', supervisor: 'Mateo Aparcana', contractor: 'ARKTURIAS', brigada: 'Huaral', closureData: null },
+                    { id: 'BKN-24954', requestDate: '2026-09-28T11:06', createdAt: new Date(Date.now() - 3600000 * 4).toISOString(), ticketType: 'Tickets de Backbone', category: 'BACKBONE', reportArea: 'NOC', affectedClients: 120, elementType: 'FO TRONCAL', elementCode: 'BB-TRONCAL-09', coords: { lat: -12.0464, lng: -77.0428 }, nodo: 'NODO SAN LUIS', project: 'LIMA CENTRO 1', distrito: 'SAN LUIS', zone: 'LIMA CENTRO', details: 'Corte de fibra troncal por obras viales.', status: 'en_proceso', assignedAt: new Date(Date.now() - 3600000 * 3).toISOString(), supervisor: 'Jeff Cochaches', contractor: 'FIBERTEK S.A.C.', brigada: 'Brigada San Luis A', closureData: null },
+                    { id: 'RQM-24955', requestDate: '2026-09-28T03:06', createdAt: new Date(Date.now() - 3600000 * 12).toISOString(), ticketType: 'Tickets de Requerimiento', category: 'REQUERIMIENTO', reportArea: 'Campo', affectedClients: 15, elementType: 'AMPLIFICADOR', elementCode: 'AMP-HUANDOY-02', coords: { lat: -11.9850, lng: -77.0650 }, nodo: 'NODO HUANDOY', project: 'LOS OLIVOS N', distrito: 'LOS OLIVOS', zone: 'LIMA NORTE', details: 'Mantenimiento preventivo.', status: 'finalizado', assignedAt: new Date(Date.now() - 3600000 * 10).toISOString(), supervisor: 'Miguel Rossell', contractor: 'REDES ANDINAS S.A.', brigada: 'Brigada Norte 1', closureData: { startTime: '08:30', endTime: '11:15', cause: 'Atenuación severa en conector CTO por humedad', solution: 'Reconfiguración y normalización de potencias ópticas', materials: [{ name: 'Conector SC/APC', qty: 4 }], closedAt: new Date(Date.now() - 3600000 * 8).toISOString() } }
+                ];
+                localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(initial));
+                return initial;
+            }
+            return JSON.parse(raw);
+        }
+        function saveTickets(t) { localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(t)); }
+        function getCatalogs() { return JSON.parse(localStorage.getItem(STORAGE_KEYS.CATALOGS)); }
+        function saveCatalogs(c) { localStorage.setItem(STORAGE_KEYS.CATALOGS, JSON.stringify(c)); }
+        
+        function getFormFields() { 
+            const raw = localStorage.getItem(STORAGE_KEYS.FORM_FIELDS); 
+            let data = raw ? JSON.parse(raw) : DEFAULT_FORM_FIELDS;
+            let modified = false;
+            if (!data.gis_report) { data.gis_report = DEFAULT_FORM_FIELDS.gis_report; modified = true; }
+            if (!data.fuel_control) { data.fuel_control = DEFAULT_FORM_FIELDS.fuel_control; modified = true; }
+            if (modified) saveFormFields(data);
+            return data;
+        }
+        function saveFormFields(f) { localStorage.setItem(STORAGE_KEYS.FORM_FIELDS, JSON.stringify(f)); }
+        function getCurrentUser() { const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER); return raw ? JSON.parse(raw) : null; }
+        function setCurrentUser(u) { if (u) localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(u)); else localStorage.removeItem(STORAGE_KEYS.CURRENT_USER); }
+
+        function getRecycledIds() {
+            const raw = localStorage.getItem(STORAGE_KEYS.RECYCLED_IDS);
+            return raw ? JSON.parse(raw) : { AVE: [], BKN: [], RQM: [] };
+        }
+        function saveRecycledIds(r) { localStorage.setItem(STORAGE_KEYS.RECYCLED_IDS, JSON.stringify(r)); }
+
+        function generateNextTicketId(ticketType) {
+            let prefix = 'AVE';
+            if (ticketType === 'Tickets de Backbone') prefix = 'BKN';
+            if (ticketType === 'Tickets de Requerimiento') prefix = 'RQM';
+
+            const recycled = getRecycledIds();
+            if (recycled[prefix] && recycled[prefix].length > 0) {
+                recycled[prefix].sort((a, b) => a - b);
+                const recycledNum = recycled[prefix].shift();
+                saveRecycledIds(recycled);
+                return `${prefix}-${recycledNum}`;
+            }
+
+            return `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
+        }
+
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const baseClass = "pointer-events-none px-4 py-3 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-3 border transition-all transform translate-y-2 opacity-0";
+            const typeClass = type === 'success' 
+                ? "bg-white text-slate-800 border-green-500/30 dark:bg-[#0a110c] dark:text-white dark:border-green-500" 
+                : "bg-white text-slate-800 border-rose-500/30 dark:bg-rose-950 dark:text-white dark:border-rose-600";
+            
+            const iconColor = type === 'success' ? 'text-green-500' : 'text-rose-500';
+            
+            toast.className = `${baseClass} ${typeClass}`;
+            toast.innerHTML = `<i data-lucide="${type === 'success' ? 'check-circle-2' : 'alert-circle'}" class="w-5 h-5 ${iconColor}"></i> <span>${msg}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+            
+            setTimeout(() => { toast.classList.remove('translate-y-2', 'opacity-0'); }, 10);
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        let currentView = 'dashboard';
+        let tempMaterials = [];
+
+        function getElapsedTime(startIso, endIso = null) {
+            if (!startIso) return { text: '0h 0m', ms: 0 };
+            const start = new Date(startIso);
+            const end = endIso ? new Date(endIso) : new Date();
+            const diffMs = end - start;
+            if (diffMs < 0) return { text: '0h 0m', ms: 0 };
+            const hrs = Math.floor(diffMs / (1000 * 60 * 60));
+            const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            return { text: `${hrs}h ${mins}m`, ms: diffMs };
+        }
+
+        function setTheme(theme) {
+            currentTheme = theme;
+            localStorage.setItem(STORAGE_KEYS.THEME, theme);
+            if (theme === 'light') { document.documentElement.classList.remove('dark'); } else { document.documentElement.classList.add('dark'); }
+            renderApp();
+        }
+
+        function switchView(view) {
+            currentView = view;
+            renderApp();
+        }
+
+        function renderApp() {
+            const user = getCurrentUser();
+            const appEl = document.getElementById('app');
+
+            if (!user) {
+                appEl.innerHTML = renderLoginScreen();
+                lucide.createIcons();
+                return;
+            }
+
+            appEl.innerHTML = `
+                <header class="sticky top-0 z-40 bg-white/95 dark:bg-[#0a110c]/95 dark:backdrop-blur-xl border-b border-slate-200 dark:border-[#122b1c] px-6 lg:px-12 py-5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-8">
+                        <!-- Winet Logo + User Profile on Left -->
+                        <div class="flex flex-col gap-2.5">
+                            <div class="cursor-pointer group flex items-center gap-3" onclick="switchView('dashboard')">
+                                <div class="font-black tracking-wider text-3xl flex items-center animate-logo text-winet-600 dark:text-winet-400">
+                                    WINET
+                                </div>
+                            </div>
+                            
+                            <!-- User profile right below the logo on left -->
+                            <div class="flex items-center gap-2.5 bg-slate-100/80 dark:bg-[#030a05] px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-[#122b1c] w-fit">
+                                <img src="${user.avatar || 'https://placehold.co/100x100/16a34a/ffffff?text=U'}" alt="Avatar" class="w-7 h-7 rounded-full object-cover border border-winet-500 shadow-sm">
+                                <div>
+                                    <div class="text-xs font-bold text-slate-900 dark:text-white leading-tight">${user.name}</div>
+                                    <div class="text-[9px] font-mono text-winet-600 dark:text-winet-400 uppercase font-bold">${user.role} • ${user.docId || 'DNI N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Navigation Tabs -->
+                        <nav class="hidden lg:flex items-center gap-1.5 text-sm font-semibold ml-4">
+                            <button onclick="switchView('dashboard')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'dashboard' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard
+                            </button>
+                            <button onclick="switchView('queues')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'queues' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="kanban" class="w-4 h-4"></i> Asignación
+                            </button>
+                            <button onclick="switchView('new_ticket')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'new_ticket' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="plus-circle" class="w-4 h-4"></i> Registrar
+                            </button>
+                            <button onclick="switchView('telegram_summary')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'telegram_summary' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="send" class="w-4 h-4"></i> Telegram
+                            </button>
+                            <button onclick="switchView('analytics')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'analytics' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="pie-chart" class="w-4 h-4"></i> Analítica
+                            </button>
+                            <button onclick="switchView('liquidation')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'liquidation' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                <i data-lucide="calculator" class="w-4 h-4"></i> Liquidación
+                            </button>
+                            ${user.role === 'admin' ? `
+                                <button onclick="switchView('db_manager')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'db_manager' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                    <i data-lucide="database" class="w-4 h-4"></i> Catálogos
+                                </button>
+                                <button onclick="switchView('form_builder')" class="px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${currentView === 'form_builder' ? 'bg-slate-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-stone-400 dark:hover:text-white dark:hover:bg-[#122b1c]'}">
+                                    <i data-lucide="sliders" class="w-4 h-4"></i> Formularios
+                                </button>
+                            ` : ''}
+                        </nav>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <button onclick="setTheme(currentTheme === 'light' ? 'dark' : 'light')" class="p-2.5 rounded-xl bg-slate-100 dark:bg-[#030a05] hover:bg-slate-200 dark:hover:bg-[#122b1c] text-slate-600 dark:text-stone-300 transition-colors shadow-sm" title="Cambiar Tema Día / Noche">
+                            <i data-lucide="${currentTheme === 'light' ? 'sun' : 'moon'}" class="w-5 h-5"></i>
+                        </button>
+
+                        <button onclick="logout()" class="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all shadow-sm" title="Cerrar Sesión">
+                            <i data-lucide="log-out" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </header>
+
+                <main class="flex-1 p-6 lg:p-10 max-w-[1700px] w-full mx-auto">
+                    ${currentView === 'dashboard' ? renderDashboardView() :
+                      currentView === 'queues' ? renderQueuesView() :
+                      currentView === 'new_ticket' ? renderNewTicketView() :
+                      currentView === 'telegram_summary' ? renderTelegramSummaryView() :
+                      currentView === 'analytics' ? renderAnalyticsView() :
+                      currentView === 'liquidation' ? renderLiquidationView() :
+                      currentView === 'db_manager' && user.role === 'admin' ? renderDbManagerView() :
+                      currentView === 'form_builder' && user.role === 'admin' ? renderFormBuilderView() : renderDashboardView()}
+                </main>
+            `;
+
+            lucide.createIcons();
+            if (currentView === 'analytics') setTimeout(initAnalyticsCharts, 100);
+        }
+
+        function renderLoginScreen() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-gradient-to-br dark:from-[#020503] dark:via-[#081c0d] dark:to-[#010a04]">
+                    <div class="w-full max-w-md bg-white dark:bg-[#0a110c] p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-winet-500/20 space-y-8">
+                        <div class="text-center space-y-2">
+                            <div class="flex justify-center mb-4">
+                                <div class="font-black tracking-wider text-5xl animate-logo text-winet-600 dark:text-winet-400">
+                                    WINET
+                                </div>
+                            </div>
+                            <h1 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Sistema PEXT</h1>
+                            <p class="text-xs text-slate-400">Gestión Operativa de Planta Externa</p>
+                        </div>
+
+                        <form onsubmit="handleLogin(event)" class="space-y-5">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 dark:text-stone-300 uppercase mb-1.5">Correo Corporativo</label>
+                                <input type="email" id="login-email" required placeholder="usuario@winet.pe" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-winet-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 dark:text-stone-300 uppercase mb-1.5">Contraseña</label>
+                                <input type="password" id="login-pass" required placeholder="••••••••" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-winet-500 font-mono">
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 rounded-xl bg-winet-600 hover:bg-winet-700 text-white text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2">
+                                <i data-lucide="log-in" class="w-4 h-4"></i> Iniciar Sesión
+                            </button>
+                        </form>
+
+                        <div class="bg-slate-50 dark:bg-[#030a05] border border-slate-100 dark:border-[#122b1c] rounded-xl p-4 text-[11px] text-slate-500 dark:text-stone-400 space-y-1.5 font-mono">
+                            <div class="font-bold text-winet-600 mb-1">Cuentas Demo:</div>
+                            <div>• Admin: <span class="text-slate-800 dark:text-white">carlos.mendoza@winet.pe</span> / winet2026</div>
+                            <div>• Supervisor: <span class="text-slate-800 dark:text-white">maparcana@winet.pe</span> / winet2026</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value.trim();
+            const pass = document.getElementById('login-pass').value.trim();
+            const user = getUsers().find(u => u.email === email && u.pass === pass);
+
+            if (user) {
+                setCurrentUser(user);
+                showToast(`Bienvenido, ${user.name}`, 'success');
+                renderApp();
+            } else {
+                showToast('Credenciales incorrectas.', 'error');
+            }
+        }
+
+        function logout() {
+            setCurrentUser(null);
+            renderApp();
+        }
+
+        function renderDashboardView() {
+            const tickets = getTickets();
+            const searchQ = document.getElementById('dash-search')?.value.toLowerCase() || '';
+            const statusF = document.getElementById('dash-status-filter')?.value || 'all';
+            const typeF = document.getElementById('dash-type-filter')?.value || 'all';
+
+            const filteredTickets = tickets.filter(t => {
+                const matchSearch = t.id.toLowerCase().includes(searchQ) || t.elementCode.toLowerCase().includes(searchQ) || t.nodo.toLowerCase().includes(searchQ) || (t.distrito && t.distrito.toLowerCase().includes(searchQ));
+                const matchStatus = statusF === 'all' || t.status === statusF;
+                const matchType = typeF === 'all' || t.ticketType === typeF;
+                return matchSearch && matchStatus && matchType;
+            });
+
+            const totalClients = tickets.reduce((acc, t) => acc + (t.affectedClients || 0), 0);
+            const pendCount = tickets.filter(t => t.status === 'pendiente').length;
+            const procCount = tickets.filter(t => t.status === 'en_proceso').length;
+            const finCount = tickets.filter(t => t.status === 'finalizado').length;
+
+            const nodeMap = {}; 
+            tickets.forEach(t => { nodeMap[t.nodo] = (nodeMap[t.nodo] || 0) + 1; });
+            const topNodes = Object.entries(nodeMap).sort((a,b) => b[1] - a[1]).slice(0, 4);
+
+            return `
+                <div class="space-y-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        ${renderKpiCard('Clientes Afectados', totalClients.toLocaleString(), 'users', 'text-slate-500', 'bg-slate-100 text-slate-600 dark:bg-slate-800/50')}
+                        ${renderKpiCard('Tickets Totales', tickets.length, 'ticket', 'text-blue-500', 'bg-blue-50 text-blue-600 dark:bg-blue-500/10')}
+                        ${renderKpiCard('Pendientes (Cola)', pendCount, 'clock', 'text-amber-500', 'bg-amber-50 text-amber-600 dark:bg-amber-500/10')}
+                        ${renderKpiCard('En Proceso', procCount, 'activity', 'text-sky-500', 'bg-sky-50 text-sky-600 dark:bg-sky-500/10')}
+                        ${renderKpiCard('Finalizados', finCount, 'check-circle', 'text-winet-500', 'bg-winet-50 text-winet-600 dark:bg-winet-500/10')}
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-6">
+                        <div class="bg-white dark:bg-[#0a110c] p-5 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm flex flex-col">
+                            <h3 class="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+                                <i data-lucide="bar-chart-2" class="w-4 h-4 text-winet-500"></i> Top Nodos Afectados
+                            </h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                ${topNodes.map(([node, count], idx) => `
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#020503] border border-slate-100 dark:border-[#122b1c] text-sm">
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-bold text-slate-400">#${idx+1}</span>
+                                            <span class="font-semibold text-slate-700 dark:text-stone-200">${node}</span>
+                                        </div>
+                                        <span class="px-2.5 py-1 rounded-lg bg-winet-100 text-winet-700 dark:bg-winet-900/30 dark:text-winet-400 font-bold">${count}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-[#0a110c] rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-slate-200 dark:border-[#122b1c] bg-slate-50 dark:bg-[#08120c] flex flex-wrap items-center justify-between gap-4">
+                            <div class="flex flex-wrap items-center gap-3 flex-1">
+                                <div class="relative min-w-[240px]">
+                                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                                    <input type="text" id="dash-search" oninput="renderApp()" value="${searchQ}" placeholder="Buscar Ticket, Nodo, Distrito..." class="w-full bg-white dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] text-sm rounded-lg pl-9 pr-4 py-2 text-slate-900 dark:text-white focus:outline-none">
+                                </div>
+
+                                <select id="dash-status-filter" onchange="renderApp()" class="bg-white dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] text-sm rounded-lg px-3 py-2 text-slate-700 dark:text-white font-semibold focus:outline-none">
+                                    <option value="all">Todos los Estatus</option>
+                                    <option value="pendiente" ${statusF==='pendiente'?'selected':''}>Pendiente</option>
+                                    <option value="en_proceso" ${statusF==='en_proceso'?'selected':''}>En Proceso</option>
+                                    <option value="finalizado" ${statusF==='finalizado'?'selected':''}>Finalizado</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <button onclick="switchView('new_ticket')" class="px-4 py-2 rounded-lg bg-winet-600 hover:bg-winet-700 text-white text-sm font-bold flex items-center gap-2 transition-all shadow-sm">
+                                    <i data-lucide="plus-circle" class="w-4 h-4"></i> Registrar Avería
+                                </button>
+                                <button onclick="exportToCSV()" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-[#122b1c] dark:text-stone-300 text-sm font-bold flex items-center gap-2 transition-all">
+                                    <i data-lucide="download" class="w-4 h-4"></i> Exportar CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr class="bg-white dark:bg-[#030905] text-slate-500 dark:text-stone-400 border-b border-slate-200 dark:border-[#122b1c] uppercase tracking-wider font-semibold text-xs">
+                                        <th class="py-3 px-4">Ticket ID</th>
+                                        <th class="py-3 px-4">Motivo de Solicitud</th>
+                                        <th class="py-3 px-4">Elemento Afectado</th>
+                                        <th class="py-3 px-4">Clientes / Distrito</th>
+                                        <th class="py-3 px-4">Coordenadas GPS</th>
+                                        <th class="py-3 px-4">Asignación y Contratista</th>
+                                        <th class="py-3 px-4">Tiempo / Estatus</th>
+                                        <th class="py-3 px-4 text-right">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 dark:divide-[#122b1c]">
+                                    ${filteredTickets.map(t => renderTicketRow(t)).join('') || `<tr><td colspan="8" class="py-12 text-center text-slate-500">No hay tickets.</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderKpiCard(title, value, icon, iconColor, iconBg) {
+            return `
+                <div class="bg-white dark:bg-[#0a110c] p-5 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm flex items-center justify-between">
+                    <div>
+                        <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">${title}</div>
+                        <div class="text-2xl font-black text-slate-900 dark:text-white mt-1">${value}</div>
+                    </div>
+                    <div class="p-3 rounded-xl ${iconBg}">
+                        <i data-lucide="${icon}" class="w-6 h-6 ${iconColor}"></i>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTicketRow(t) {
+            let typeStyle = 'bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'; 
+            if (t.ticketType === 'Tickets de Backbone') typeStyle = 'bg-purple-100 text-purple-800 dark:bg-purple-500/10 dark:text-purple-400 border-purple-200 dark:border-purple-500/20'; 
+            if (t.ticketType === 'Tickets de Requerimiento') typeStyle = 'bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-400 border-blue-200 dark:border-blue-500/20'; 
+
+            let statusStyle = 'bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400 border-amber-200 dark:border-amber-500/20';
+            let statusText = 'Pendiente';
+            if (t.status === 'en_proceso') { statusStyle = 'bg-sky-100 text-sky-800 dark:bg-sky-500/10 dark:text-sky-400 border-sky-200 dark:border-sky-500/20'; statusText = 'En Proceso'; }
+            if (t.status === 'finalizado') { statusStyle = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'; statusText = 'Finalizado'; }
+
+            const lat = t.coords?.lat !== undefined ? t.coords.lat : -12.0464;
+            const lng = t.coords?.lng !== undefined ? t.coords.lng : -77.0428;
+            const coordsConcatenated = `${lat}, ${lng}`;
+            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+            const closureTime = t.closureData?.closedAt || null;
+            const refDate = t.requestDate ? t.requestDate : t.createdAt;
+            const elapsed = getElapsedTime(refDate, t.status === 'finalizado' ? closureTime : null);
+
+            return `
+                <tr class="hover:bg-slate-50 dark:hover:bg-[#030a05] transition-colors group cursor-pointer" onclick="openTicketDetailModal('${t.id}')">
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <div class="font-mono font-bold text-slate-900 dark:text-white">${t.id}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Req: ${formatCustomDate(t.requestDate || t.createdAt)}</div>
+                    </td>
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <span class="inline-block px-2 py-0.5 rounded border text-[11px] font-bold ${typeStyle}">${t.ticketType}</span>
+                        <div class="text-[11px] text-slate-500 mt-1">Cat: <b class="text-slate-700 dark:text-stone-300 uppercase">${t.category}</b></div>
+                    </td>
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <div class="font-bold text-slate-800 dark:text-stone-200 text-xs">${t.elementType || 'Elemento'}</div>
+                        <div class="text-[11px] font-mono text-winet-600 mt-0.5">${t.elementCode || 'S/N'}</div>
+                    </td>
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <div class="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+                            <i data-lucide="users" class="w-3.5 h-3.5"></i> ${t.affectedClients} Afectados
+                        </div>
+                        <div class="text-[11px] font-bold text-slate-700 dark:text-stone-300 mt-1 uppercase">Distrito: ${t.distrito || 'N/A'}</div>
+                        <div class="text-[10px] text-slate-400">${t.nodo}</div>
+                    </td>
+                    <td class="py-3 px-4 font-mono text-xs" onclick="event.stopPropagation()">
+                        <a href="${googleMapsUrl}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-bold" title="Abrir en Google Maps">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5"></i> ${coordsConcatenated}
+                        </a>
+                        <span class="text-[10px] text-slate-400 block mt-0.5">Google Maps ↗</span>
+                    </td>
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <div class="text-xs font-bold text-slate-800 dark:text-stone-200 flex items-center gap-1.5 mb-0.5">
+                            <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i> Sup: ${t.supervisor || 'Sin Asignar'}
+                        </div>
+                        <div class="text-[11px] font-bold text-winet-600 flex items-center gap-1.5 mb-0.5 uppercase">
+                            <i data-lucide="briefcase" class="w-3.5 h-3.5"></i> Contratista: ${t.contractor || 'Ninguna'}
+                        </div>
+                        <div class="text-[10px] font-semibold text-slate-500 flex items-center gap-1.5">
+                            <i data-lucide="shield" class="w-3.5 h-3.5"></i> Brigada: ${t.brigada || 'Sin Brigada'}
+                        </div>
+                    </td>
+                    <td class="py-3 px-4" onclick="event.stopPropagation()">
+                        <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-500/10 border border-amber-200 font-mono font-bold text-[11px] mb-1">
+                            <i data-lucide="timer" class="w-3 h-3"></i> ${elapsed.text}
+                        </div>
+                        <div class="flex flex-col gap-1 items-start">
+                            <span class="px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider ${statusStyle}">${statusText}</span>
+                            <select onchange="updateTicketStatus('${t.id}', this.value)" class="text-[10px] font-bold bg-white dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] rounded px-1 py-0.5 text-slate-600 dark:text-stone-400 focus:outline-none">
+                                <option value="pendiente" ${t.status==='pendiente'?'selected':''}>Pendiente</option>
+                                <option value="en_proceso" ${t.status==='en_proceso'?'selected':''}>En Proceso</option>
+                                <option value="finalizado" ${t.status==='finalizado'?'selected':''}>Finalizado</option>
+                            </select>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 text-right" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="quickTelegramModal('${t.id}')" class="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-[#122b1c] text-blue-600" title="Telegram">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="openEditTicketModal('${t.id}')" class="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-[#122b1c] text-slate-600 dark:text-stone-300" title="Editar">
+                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                            </button>
+                            ${t.status !== 'finalizado' ? `
+                                <button onclick="openClosureModal('${t.id}')" class="p-1.5 rounded-md hover:bg-winet-100 text-winet-600" title="Cerrar Avería">
+                                    <i data-lucide="check-square" class="w-4 h-4"></i>
+                                </button>
+                            ` : `
+                                <button onclick="viewClosureDetails('${t.id}')" class="p-1.5 rounded-md hover:bg-slate-200 text-slate-600" title="Ver Cierre">
+                                    <i data-lucide="eye" class="w-4 h-4"></i>
+                                </button>
+                            `}
+                            <button onclick="deleteTicketPrompt('${t.id}')" class="p-1.5 rounded-md hover:bg-rose-100 text-rose-600" title="Eliminar Registro">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function openTicketDetailModal(id) {
+            const t = getTickets().find(x => x.id === id);
+            if (!t) return;
+            const lat = t.coords?.lat || -12.0464;
+            const lng = t.coords?.lng || -77.0428;
+            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] max-h-[92vh] flex flex-col">
+                    <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-[#122b1c] flex-shrink-0">
+                        <div>
+                            <h3 class="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                Ticket Detalle • <span class="text-winet-600 font-mono">${t.id}</span>
+                            </h3>
+                            <p class="text-xs text-slate-500">Solicitud: ${formatCustomDate(t.requestDate || t.createdAt)}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="${googleMapsUrl}" target="_blank" class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:underline">
+                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Abrir en Google Maps ↗
+                            </a>
+                            <button onclick="closeModal(); openEditTicketModal('${t.id}')" class="px-3 py-1.5 bg-slate-100 dark:bg-[#122b1c] text-slate-700 dark:text-stone-300 rounded-lg text-xs font-bold flex items-center gap-1">
+                                <i data-lucide="pencil" class="w-3.5 h-3.5"></i> Editar
+                            </button>
+                            <button onclick="closeModal()" class="text-slate-400 hover:text-slate-800 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 text-sm flex flex-col justify-between overflow-y-auto custom-scrollbar pr-2 flex-1">
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center bg-slate-50 dark:bg-[#020503] px-3 py-2 rounded-xl border border-slate-100 dark:border-[#122b1c]">
+                                <span class="text-xs font-bold text-slate-500 uppercase">Ubicación GPS Exacta</span>
+                                <a href="${googleMapsUrl}" target="_blank" class="text-xs font-mono font-bold text-blue-600 hover:underline">
+                                    ${lat}, ${lng} ↗
+                                </a>
+                            </div>
+
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 dark:bg-[#020503] p-4 rounded-xl border border-slate-100 dark:border-[#122b1c]">
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Motivo</span><div class="font-bold text-xs mt-0.5">${t.ticketType}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Categoría</span><div class="font-bold text-xs mt-0.5 uppercase">${t.category}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Clientes Afectados</span><div class="font-bold text-xs text-rose-500 mt-0.5">${t.affectedClients} afectados</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Contratista</span><div class="font-bold text-xs text-winet-600 mt-0.5">${t.contractor || 'Sin Asignar'}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Brigada</span><div class="font-bold text-xs mt-0.5">${t.brigada || 'N/A'}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Distrito</span><div class="font-bold text-xs mt-0.5">${t.distrito}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Nodo / Proy</span><div class="font-bold text-xs mt-0.5">${t.nodo}</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Elemento</span><div class="font-bold text-xs mt-0.5">${t.elementType} (${t.elementCode})</div></div>
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Supervisor</span><div class="font-bold text-xs mt-0.5">${t.supervisor || 'N/A'}</div></div>
+                            </div>
+
+                            <div>
+                                <span class="text-[11px] font-bold text-slate-400 uppercase block mb-1">Detalles / Rotulado</span>
+                                <div class="bg-slate-50 dark:bg-[#020503] p-3 rounded-xl border border-slate-100 dark:border-[#122b1c] text-xs font-mono whitespace-pre-line">${t.details || 'Sin detalles'}</div>
+                            </div>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 dark:border-[#122b1c] flex justify-end">
+                            <button onclick="closeModal()" class="px-6 py-2 bg-slate-200 dark:bg-[#122b1c] text-slate-800 dark:text-white rounded-xl font-bold text-xs">Cerrar Ventana</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function deleteTicketPrompt(id) {
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] text-center">
+                    <div class="w-12 h-12 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                    </div>
+                    <h3 class="font-bold text-slate-800 dark:text-white mb-2">Eliminar Ticket</h3>
+                    <p class="text-sm text-slate-500 mb-6">¿Está seguro de eliminar permanentemente el ticket <strong>${id}</strong>? Su número ID será reciclado.</p>
+                    <div class="flex justify-center gap-3">
+                        <button onclick="closeModal()" class="px-5 py-2 text-slate-600 font-bold rounded-xl bg-slate-100">Cancelar</button>
+                        <button onclick="confirmDeleteTicket('${id}')" class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl">Eliminar</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function confirmDeleteTicket(id) {
+            let tickets = getTickets();
+            const ticketToDelete = tickets.find(t => t.id === id);
+
+            if (ticketToDelete && ticketToDelete.id) {
+                const parts = ticketToDelete.id.split('-');
+                if (parts.length === 2) {
+                    const prefix = parts[0];
+                    const num = parseInt(parts[1], 10);
+                    if (!isNaN(num)) {
+                        const recycled = getRecycledIds();
+                        if (!recycled[prefix]) recycled[prefix] = [];
+                        if (!recycled[prefix].includes(num)) {
+                            recycled[prefix].push(num);
+                            saveRecycledIds(recycled);
+                        }
+                    }
+                }
+            }
+
+            tickets = tickets.filter(t => t.id !== id);
+            saveTickets(tickets);
+            closeModal();
+            renderApp();
+            showToast(`Ticket ${id} eliminado. ID reciclado.`, 'success');
+        }
+
+        function openModal(htmlContent) {
+            const container = document.getElementById('modal-container');
+            container.innerHTML = `
+                <div class="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    ${htmlContent}
+                </div>
+            `;
+            lucide.createIcons();
+        }
+        function closeModal() { document.getElementById('modal-container').innerHTML = ''; }
+
+        function renderNewTicketView() {
+            const catalogs = getCatalogs();
+            const supervisors = getUsers().filter(u => u.role !== 'noc');
+            const initialType = 'Avería Clientes Loss';
+            const initialId = generateNextTicketId(initialType);
+            const nowIsoLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+            return `
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                                <i data-lucide="plus-circle" class="text-winet-500"></i> Registro de Nueva Avería
+                            </h2>
+                            <p class="text-sm text-slate-500 mt-1">Complete los datos de la incidencia. La asignación es opcional.</p>
+                        </div>
+                        <button onclick="switchView('dashboard')" class="px-4 py-2 bg-white dark:bg-[#0a110c] border border-slate-200 dark:border-[#122b1c] rounded-xl text-sm font-semibold shadow-sm">
+                            Volver
+                        </button>
+                    </div>
+
+                    <form id="new-ticket-form" onsubmit="handleCreateTicketSubmit(event)" class="bg-white dark:bg-[#0a110c] p-6 lg:p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-[#122b1c] space-y-6">
+                        <div class="flex flex-wrap justify-between items-center gap-4 border-b border-slate-100 dark:border-[#122b1c] pb-4">
+                            <div>
+                                <span class="text-xs font-bold text-slate-500 uppercase">ID Autogenerado (Reciclable)</span>
+                                <div id="display-ticket-id" class="text-xl font-mono font-black text-winet-600">${initialId}</div>
+                            </div>
+                            <div class="w-full sm:w-auto">
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha y Hora de Solicitud</label>
+                                <input type="datetime-local" id="reg-request-date" required value="${nowIsoLocal}" class="bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-3 py-2 text-sm font-mono text-slate-900 dark:text-white focus:outline-none">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo de Avería</label>
+                                <select id="reg-ticket-type" onchange="updateTicketIdPrefix(this.value)" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none font-medium">
+                                    <option value="Avería Clientes Loss">Avería Clientes Loss</option>
+                                    <option value="Tickets de Backbone">Tickets de Backbone</option>
+                                    <option value="Tickets de Requerimiento">Tickets de Requerimiento</option>
+                                </select>
+                            </div>
+                            ${renderInputGroup('Categoría', 'reg-category', 'select', ['AVERIA', 'BACKBONE', 'REQUERIMIENTO'])}
+                            ${renderInputGroup('Área que Reporta', 'reg-report-area', 'select', ['Calidad Operativa', 'NOC', 'Campo'])}
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            ${renderInputGroup('Clientes Afectados', 'reg-clients', 'number', null, '', 'Ej. 3')}
+                            ${renderInputGroup('Tipo de Elemento', 'reg-eltype', 'text', null, '', 'Ej. Caja CTO')}
+                            ${renderInputGroup('Código de Elemento', 'reg-elcode', 'text', null, '', 'Ej. 20260928200')}
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            ${renderInputGroup('Nodo', 'reg-nodo', 'text', null, '', 'Ej. NODO HUARAL')}
+                            ${renderInputGroup('Proyecto', 'reg-project', 'text', null, '', 'Ej. HUARAL 2')}
+                            ${renderInputGroup('Distrito', 'reg-distrito', 'text', null, '', 'Ej. Huaral')}
+                            ${renderInputGroup('Zona', 'reg-zone', 'text', null, '', 'Ej. LIMA PROVINCIA')}
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-[#020503] rounded-xl border border-slate-100 dark:border-[#122b1c]">
+                            ${renderInputGroup('Supervisor Asignado (Opcional)', 'reg-supervisor', 'select', supervisors.map(s=>s.name), '', '', '', false)}
+                            ${renderInputGroup('Contratista (Opcional)', 'reg-contractor', 'select', catalogs.contractors, '', '', '', false)}
+                            ${renderInputGroup('Brigada (Opcional)', 'reg-brigada', 'text', null, '', 'Ej. Brigada 1', '', false)}
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            ${renderInputGroup('Latitud GPS', 'reg-lat', 'number', null, '', 'Ej. -12.9897768', 'any')}
+                            ${renderInputGroup('Longitud GPS', 'reg-lng', 'number', null, '', 'Ej. -77.0909098', 'any')}
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 dark:text-stone-300 uppercase mb-1">Detalles Adicionales</label>
+                            <textarea id="reg-details" rows="3" required class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl p-4 text-sm text-slate-900 dark:text-white focus:outline-none font-mono" placeholder="Describa la avería, rotulados, etc..."></textarea>
+                        </div>
+
+                        <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-[#122b1c]">
+                            <button type="reset" onclick="setTimeout(()=>updateTicketIdPrefix(document.getElementById('reg-ticket-type').value), 50);" class="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-[#122b1c] text-sm font-bold shadow-sm transition-all flex items-center gap-2">
+                                <i data-lucide="eraser" class="w-4 h-4"></i> Limpiar Formulario
+                            </button>
+                            <button type="submit" class="px-8 py-3 rounded-xl bg-winet-600 hover:bg-winet-700 text-white text-sm font-bold shadow-md flex items-center gap-2 transition-all">
+                                <i data-lucide="save" class="w-4 h-4"></i> Registrar Ticket
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+        }
+
+        function updateTicketIdPrefix(ticketType) {
+            const displayEl = document.getElementById('display-ticket-id');
+            if(!displayEl) return;
+            displayEl.innerText = generateNextTicketId(ticketType);
+        }
+
+        function renderInputGroup(label, id, type, options = null, val = '', placeholder = '', step = '', required = true) {
+            const baseClass = "w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none font-medium";
+            let inputHtml = '';
+            const reqAttr = required ? 'required' : '';
+            
+            if (type === 'select' && options) {
+                let opts = options.map(o => `<option value="${o}">${o}</option>`).join('');
+                if (!required) opts = `<option value="">Seleccione... (Opcional)</option>` + opts;
+                inputHtml = `<select id="${id}" ${reqAttr} class="${baseClass}">${opts}</select>`;
+            } else {
+                inputHtml = `<input type="${type}" id="${id}" ${reqAttr} value="${val}" placeholder="${placeholder}" step="${step}" class="${baseClass}">`;
+            }
+
+            return `
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">${label}</label>
+                    ${inputHtml}
+                </div>
+            `;
+        }
+
+        function handleCreateTicketSubmit(e) {
+            e.preventDefault();
+            const tickets = getTickets();
+            const customId = document.getElementById('display-ticket-id').innerText;
+            const reqDateVal = document.getElementById('reg-request-date').value;
+
+            const newTicket = {
+                id: customId,
+                requestDate: reqDateVal ? new Date(reqDateVal).toISOString() : new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                ticketType: document.getElementById('reg-ticket-type').value,
+                category: document.getElementById('reg-category').value,
+                reportArea: document.getElementById('reg-report-area').value,
+                affectedClients: parseInt(document.getElementById('reg-clients').value) || 3,
+                elementType: document.getElementById('reg-eltype').value.trim(),
+                elementCode: document.getElementById('reg-elcode').value.trim(),
+                coords: { lat: parseFloat(document.getElementById('reg-lat').value) || -12.9897768, lng: parseFloat(document.getElementById('reg-lng').value) || -77.0909098 },
+                nodo: document.getElementById('reg-nodo').value.trim().toUpperCase(),
+                project: document.getElementById('reg-project').value.trim().toUpperCase(),
+                distrito: document.getElementById('reg-distrito').value.trim().toUpperCase(),
+                zone: document.getElementById('reg-zone').value.trim().toUpperCase(),
+                details: document.getElementById('reg-details').value.trim(),
+                status: 'pendiente', assignedAt: null,
+                supervisor: document.getElementById('reg-supervisor').value || null,
+                contractor: document.getElementById('reg-contractor').value || null,
+                brigada: document.getElementById('reg-brigada').value.trim(),
+                closureData: null
+            };
+            tickets.unshift(newTicket);
+            saveTickets(tickets);
+            showToast(`Ticket ${customId} registrado.`, 'success');
+            switchView('dashboard');
+        }
+
+        function openEditTicketModal(ticketId) {
+            const ticket = getTickets().find(t => t.id === ticketId);
+            if (!ticket) return;
+            const supervisors = getUsers().filter(u => u.role !== 'noc');
+            const catalogs = getCatalogs();
+
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] max-h-[90vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-5 pb-3 border-b border-slate-100 dark:border-[#122b1c]">
+                        <h3 class="text-lg font-bold text-slate-800 dark:text-white">Editar Ticket • <span class="text-winet-600 font-mono">${ticket.id}</span></h3>
+                        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-800"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="handleEditSubmit(event, '${ticket.id}')" class="space-y-4">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            ${renderInputGroup('Clientes', 'ed-clients', 'number', null, ticket.affectedClients)}
+                            ${renderInputGroup('Elemento', 'ed-eltype', 'text', null, ticket.elementType)}
+                            ${renderInputGroup('Código', 'ed-elcode', 'text', null, ticket.elementCode)}
+                            ${renderInputGroup('Nodo', 'ed-nodo', 'text', null, ticket.nodo)}
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            ${renderInputGroup('Proyecto', 'ed-project', 'text', null, ticket.project)}
+                            ${renderInputGroup('Distrito', 'ed-distrito', 'text', null, ticket.distrito)}
+                            ${renderInputGroup('Zona', 'ed-zone', 'text', null, ticket.zone)}
+                            ${renderInputGroup('Brigada', 'ed-brigada', 'text', null, ticket.brigada)}
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            ${renderInputGroup('Supervisor', 'ed-sup', 'select', supervisors.map(s => s.name), '', '', '', false)}
+                            ${renderInputGroup('Contratista', 'ed-con', 'select', catalogs.contractors, '', '', '', false)}
+                        </div>
+                        <div class="flex justify-end gap-2 pt-3">
+                            <button type="button" onclick="closeModal()" class="px-5 py-2 text-slate-600 font-bold rounded-xl text-sm">Cancelar</button>
+                            <button type="submit" class="px-6 py-2 bg-winet-600 text-white font-bold rounded-xl text-sm">Guardar Cambios</button>
+                        </div>
+                    </form>
+                </div>
+            `);
+            setTimeout(() => {
+                const supEl = document.getElementById('ed-sup');
+                const conEl = document.getElementById('ed-con');
+                if (supEl) supEl.value = ticket.supervisor || '';
+                if (conEl) conEl.value = ticket.contractor || '';
+            }, 50);
+        }
+
+        function handleEditSubmit(e, id) {
+            e.preventDefault();
+            const tickets = getTickets();
+            const t = tickets.find(x => x.id === id);
+            t.affectedClients = parseInt(document.getElementById('ed-clients').value) || 1;
+            t.elementType = document.getElementById('ed-eltype').value.trim();
+            t.elementCode = document.getElementById('ed-elcode').value.trim();
+            t.nodo = document.getElementById('ed-nodo').value.trim().toUpperCase();
+            t.project = document.getElementById('ed-project').value.trim().toUpperCase();
+            t.distrito = document.getElementById('ed-distrito').value.trim().toUpperCase();
+            t.zone = document.getElementById('ed-zone').value.trim().toUpperCase();
+            t.brigada = document.getElementById('ed-brigada').value.trim();
+            t.supervisor = document.getElementById('ed-sup').value || null;
+            t.contractor = document.getElementById('ed-con').value || null;
+            
+            saveTickets(tickets); showToast('Ticket actualizado con éxito', 'success'); closeModal(); renderApp();
+        }
+
+        function updateTicketStatus(id, stat) {
+            const tickets = getTickets();
+            const t = tickets.find(x => x.id === id);
+            t.status = stat;
+            if(stat === 'en_proceso' && !t.assignedAt) t.assignedAt = new Date().toISOString();
+            saveTickets(tickets); showToast('Estatus actualizado'); renderApp();
+        }
+
+        function quickTelegramModal(id) {
+            const t = getTickets().find(x => x.id === id);
+            const text = buildTelegramFormat(t);
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c]">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2"><i data-lucide="send" class="w-4 h-4 text-blue-500"></i> Telegram • ${id}</h3>
+                        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-800"><i data-lucide="x"></i></button>
+                    </div>
+                    <textarea id="qt-box" rows="15" readonly class="w-full bg-slate-50 dark:bg-[#020503] text-slate-700 dark:text-winet-400 border border-slate-200 dark:border-[#122b1c] rounded-xl p-3 font-mono text-xs focus:outline-none">${text}</textarea>
+                    <button onclick="document.getElementById('qt-box').select(); document.execCommand('copy'); showToast('Copiado'); closeModal();" class="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm">Copiar al Portapapeles</button>
+                </div>
+            `);
+        }
+
+        function buildTelegramFormat(t) {
+            return `TICKET:  ${t.id}\nFECHA DE SOLICITUD:  ${formatCustomDate(t.requestDate || t.createdAt)}\nAREA QUE REPORTA:  ${(t.reportArea||'').toUpperCase()}\nMOTIVO:  ${(t.ticketType||'').toUpperCase()}\nCATEGORIA:  ${(t.category||'').toUpperCase()}\nCLIENTES AFECTADOS:  ${t.affectedClients}\nELEMENTO:  ${(t.elementType||'').toUpperCase()}\nCODIGO:  ${t.elementCode||''}\nCOORDENADAS:  ${t.coords.lat}, ${t.coords.lng}\nNODO:  ${t.nodo}\nPROYECTO:  ${t.project}\nDISTRITO:  ${t.distrito}\nZONA:  ${t.zone}\nDETALLES:  "${t.details}"\nSUPERVISOR:  ${t.supervisor}\nCONTRATISTA:  ${t.contractor}\nBRIGADA:  ${t.brigada}`;
+        }
+
+        function renderFormBuilderView() {
+            const fields = getFormFields();
+            return `
+                <div class="max-w-[1500px] mx-auto space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="sliders" class="text-winet-500"></i> Constructor de Formularios</h2>
+                        <button onclick="switchView('dashboard')" class="px-4 py-2 bg-white dark:bg-[#0a110c] border border-slate-200 dark:border-[#122b1c] rounded-xl text-sm font-semibold shadow-sm">Volver</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                        ${renderFieldList('registration', 'Registro de Avería', fields.registration)}
+                        ${renderFieldList('closure', 'Cierre de Ticket', fields.closure)}
+                        ${renderFieldList('gis_report', 'Reporte GIS Catastros', fields.gis_report)}
+                        ${renderFieldList('fuel_control', 'Control Combustible', fields.fuel_control)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFieldList(type, title, fieldArr) {
+            return `
+                <div class="bg-white dark:bg-[#0a110c] p-6 rounded-3xl border border-slate-200 dark:border-[#122b1c] shadow-sm flex flex-col h-[600px]">
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-[#122b1c]">
+                        <h3 class="font-bold text-sm text-slate-800 dark:text-white">${title}</h3>
+                        <button onclick="openBuilderModal('${type}')" class="text-xs bg-winet-600 text-white px-3 py-1.5 rounded-lg font-bold">+ Campo</button>
+                    </div>
+                    <div class="space-y-2 overflow-y-auto flex-1 pr-1">
+                        ${fieldArr.map((f, i) => `
+                            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c]">
+                                <div>
+                                    <div class="text-sm font-bold text-slate-800 dark:text-white">${f.label} <span class="text-[10px] font-mono text-slate-400">(${f.type})</span></div>
+                                    <div class="text-xs ${f.active ? 'text-winet-600' : 'text-slate-400'}">${f.active ? 'Activo' : 'Inactivo'}</div>
+                                </div>
+                                <div class="flex gap-1">
+                                    <button onclick="openBuilderModal('${type}', ${i})" class="p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-500/10 rounded-md" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                    <button onclick="toggleFieldStatus('${type}', ${i})" class="p-1.5 text-slate-600 bg-slate-200 dark:bg-[#122b1c] rounded-md" title="Ocultar/Mostrar"><i data-lucide="eye${f.active ? '' : '-off'}" class="w-4 h-4"></i></button>
+                                    <button onclick="deleteField('${type}', ${i})" class="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-500/10 rounded-md" title="Eliminar Campo"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function openBuilderModal(type, idx = -1) {
+            const fields = getFormFields();
+            const f = idx >= 0 ? fields[type][idx] : { label: '', type: 'text', options: '' };
+            const title = idx >= 0 ? 'Editar Campo' : 'Nuevo Campo';
+
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-slate-800 dark:text-white">${title}</h3>
+                        <button onclick="closeModal()" class="text-slate-400"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="saveBuilderField(event, '${type}', ${idx})" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Nombre del Campo</label>
+                            <input type="text" id="fb-label" required value="${f.label}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Tipo de Campo</label>
+                            <select id="fb-type" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                                <option value="text" ${f.type === 'text' ? 'selected' : ''}>Texto</option>
+                                <option value="number" ${f.type === 'number' ? 'selected' : ''}>Número</option>
+                                <option value="select" ${f.type === 'select' ? 'selected' : ''}>Desplegable</option>
+                                <option value="textarea" ${f.type === 'textarea' ? 'selected' : ''}>Área de Texto</option>
+                                <option value="time" ${f.type === 'time' ? 'selected' : ''}>Hora</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Opciones (coma separadas)</label>
+                            <input type="text" id="fb-options" value="${f.options || ''}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="closeModal()" class="px-5 py-2 text-slate-600 rounded-xl text-sm font-bold">Cancelar</button>
+                            <button type="submit" class="px-5 py-2 bg-winet-600 text-white rounded-xl text-sm font-bold">Guardar</button>
+                        </div>
+                    </form>
+                </div>
+            `);
+        }
+
+        function saveBuilderField(e, type, idx) {
+            e.preventDefault();
+            const fields = getFormFields();
+            const newField = {
+                id: idx >= 0 ? fields[type][idx].id : `field_${Date.now()}`,
+                label: document.getElementById('fb-label').value.trim(),
+                type: document.getElementById('fb-type').value,
+                options: document.getElementById('fb-options').value.trim(),
+                required: true,
+                active: true
+            };
+            if (idx >= 0) fields[type][idx] = newField;
+            else fields[type].push(newField);
+            saveFormFields(fields);
+            closeModal();
+            renderApp();
+            showToast('Campo guardado', 'success');
+        }
+
+        function toggleFieldStatus(type, idx) {
+            const fields = getFormFields();
+            fields[type][idx].active = !fields[type][idx].active;
+            saveFormFields(fields); renderApp();
+        }
+
+        function deleteField(type, idx) {
+            const fields = getFormFields();
+            fields[type].splice(idx, 1);
+            saveFormFields(fields);
+            renderApp();
+            showToast('Campo eliminado', 'success');
+        }
+
+        function formatCustomDate(iso) {
+            if(!iso) return '';
+            const d = new Date(iso);
+            if(isNaN(d.getTime())) return iso;
+            return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+
+        function renderTelegramSummaryView() {
+            const tickets = getTickets();
+            return `
+                <div class="max-w-5xl mx-auto space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="send" class="text-blue-500"></i> Resumen para Telegram</h2>
+                        <button onclick="switchView('dashboard')" class="px-4 py-2 bg-white dark:bg-[#0a110c] border border-slate-200 dark:border-[#122b1c] rounded-xl text-sm font-semibold shadow-sm">Volver</button>
+                    </div>
+
+                    <div class="flex flex-wrap gap-3 bg-white dark:bg-[#0a110c] p-4 rounded-xl border border-slate-200 dark:border-[#122b1c] shadow-sm">
+                        <div class="relative flex-1 min-w-[200px]">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            <input type="text" id="ts-search" onkeyup="filterTelegramList()" placeholder="Buscar Ticket o Nodo..." class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] text-sm rounded-lg pl-9 pr-4 py-2 text-slate-900 dark:text-white focus:outline-none">
+                        </div>
+                        <select id="ts-status" onchange="filterTelegramList()" class="bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] text-sm rounded-lg px-3 py-2 text-slate-700 dark:text-white font-semibold focus:outline-none">
+                            <option value="all">Todos los Estatus</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="en_proceso">En Proceso</option>
+                            <option value="finalizado">Finalizado</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-white dark:bg-[#0a110c] rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm overflow-hidden p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2" id="ts-ticket-list">
+                            <h3 class="font-bold text-slate-800 dark:text-white mb-2">Seleccione un Ticket</h3>
+                            ${tickets.map(t => `
+                                <div class="ts-ticket-item cursor-pointer p-4 rounded-xl border border-slate-200 dark:border-[#122b1c] hover:border-winet-500 transition-all bg-slate-50 dark:bg-[#020503]" data-search="${t.id.toLowerCase()} ${t.nodo.toLowerCase()} ${t.ticketType.toLowerCase()}" data-status="${t.status}" onclick="document.getElementById('ts-preview').value = buildTelegramFormat(getTickets().find(x=>x.id==='${t.id}')); document.getElementById('ts-preview-id').innerText = '${t.id}';">
+                                    <div class="font-bold text-slate-800 dark:text-white flex justify-between items-center">
+                                        <span>${t.id}</span>
+                                        <span class="text-[10px] px-2 py-0.5 rounded-md bg-winet-100 text-winet-700 dark:bg-winet-900/30">${t.status.replace('_', ' ')}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 mt-1">${t.nodo} • ${t.ticketType}</div>
+                                </div>
+                            `).join('') || '<p class="text-sm text-slate-500">No hay tickets.</p>'}
+                        </div>
+                        <div class="flex flex-col h-full">
+                            <h3 class="font-bold text-slate-800 dark:text-white mb-2 flex justify-between items-center">
+                                <span>Vista Previa <span id="ts-preview-id" class="text-winet-600 ml-2 font-mono"></span></span>
+                                <button onclick="const el = document.getElementById('ts-preview'); el.select(); document.execCommand('copy'); showToast('Copiado');" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1">
+                                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
+                                </button>
+                            </h3>
+                            <textarea id="ts-preview" readonly placeholder="Seleccione un ticket..." class="flex-1 w-full min-h-[400px] bg-slate-50 dark:bg-[#020503] text-slate-700 dark:text-winet-400 border border-slate-200 dark:border-[#122b1c] rounded-xl p-4 font-mono text-sm focus:outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function filterTelegramList() {
+            const searchQ = document.getElementById('ts-search').value.toLowerCase();
+            const statusF = document.getElementById('ts-status').value;
+            document.querySelectorAll('.ts-ticket-item').forEach(item => {
+                const searchableText = item.getAttribute('data-search') || '';
+                const status = item.getAttribute('data-status') || '';
+                if (searchableText.includes(searchQ) && (statusF === 'all' || status === statusF)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        function renderDbManagerView() {
+            const catalogs = getCatalogs();
+            const users = getUsers();
+            return `
+                <div class="max-w-6xl mx-auto space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="database" class="text-winet-500"></i> Gestión de Base de Datos</h2>
+                        <div class="flex items-center gap-3">
+                            <label class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2">
+                                <i data-lucide="upload-cloud" class="w-4 h-4"></i> Importar Excel BD
+                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcelDatabase(event)">
+                            </label>
+                            <button onclick="switchView('dashboard')" class="px-4 py-2 bg-white dark:bg-[#0a110c] border border-slate-200 dark:border-[#122b1c] rounded-xl text-sm font-semibold shadow-sm">Volver</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        ${renderCatalogList('Contratistas', 'contractors', catalogs.contractors)}
+                        ${renderCatalogList('Causas Raíz', 'causes', catalogs.causes)}
+                        ${renderCatalogList('Soluciones', 'solutions', catalogs.solutions)}
+                        <div class="bg-white dark:bg-[#0a110c] p-6 rounded-3xl border border-slate-200 dark:border-[#122b1c] shadow-sm">
+                            <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-[#122b1c]">
+                                <h3 class="font-bold text-sm text-slate-800 dark:text-white">Usuarios Acreditados (${users.length})</h3>
+                                <button onclick="openUserModal()" class="text-xs bg-winet-600 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Nuevo</button>
+                            </div>
+                            <div class="space-y-3 max-h-[350px] overflow-y-auto pr-2">
+                                ${users.map(u => `
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] text-sm group">
+                                        <div class="flex items-center gap-3">
+                                            <img src="${u.avatar || 'https://placehold.co/100x100/16a34a/ffffff?text=U'}" class="w-10 h-10 rounded-full object-cover border border-winet-500/50">
+                                            <div>
+                                                <div class="font-bold dark:text-white">${u.name} <span class="text-[10px] px-1.5 py-0.5 ml-2 bg-slate-200 dark:bg-[#122b1c] rounded uppercase">${u.role}</span></div>
+                                                <div class="text-xs text-slate-500">${u.email} • <span class="font-mono text-winet-600">DNI: ${u.docId || 'N/A'}</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-1">
+                                            <button onclick="openUserModal('${u.id}')" class="p-1.5 text-blue-600 bg-blue-50 rounded-md" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                            <button onclick="deleteUser('${u.id}')" class="p-1.5 text-rose-500 bg-rose-50 rounded-md" title="Eliminar"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCatalogList(title, key, list) {
+            return `
+                <div class="bg-white dark:bg-[#0a110c] p-6 rounded-3xl border border-slate-200 dark:border-[#122b1c] shadow-sm flex flex-col max-h-[400px]">
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-[#122b1c]">
+                        <h3 class="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-2">
+                            ${title} <span class="bg-slate-100 dark:bg-slate-800 text-xs px-2 py-0.5 rounded-full">${list.length}</span>
+                        </h3>
+                        <button onclick="addCatalogItem('${key}')" class="text-xs bg-winet-600 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Añadir</button>
+                    </div>
+                    <div class="space-y-2 overflow-y-auto pr-2 flex-1">
+                        ${list.map((item, idx) => `
+                            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] text-sm dark:text-stone-300">
+                                <span>${typeof item === 'string' ? item : `${item.name} (${item.unit})`}</span>
+                                <button onclick="removeCatalogItem('${key}', ${idx})" class="text-rose-500 hover:bg-rose-50 p-1.5 rounded"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function addCatalogItem(key) {
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c]">
+                    <h3 class="font-bold text-slate-800 dark:text-white mb-4">Añadir Nuevo Valor</h3>
+                    <input type="text" id="new-cat-val" required placeholder="Escriba aquí..." class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none mb-4">
+                    <div class="flex justify-end gap-2">
+                        <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600">Cancelar</button>
+                        <button onclick="saveNewCatalogItem('${key}')" class="px-5 py-2 bg-winet-600 text-white rounded-xl text-sm font-bold">Guardar</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function saveNewCatalogItem(key) {
+            const val = document.getElementById('new-cat-val').value.trim();
+            if(!val) return;
+            const catalogs = getCatalogs();
+            if(key === 'materials') catalogs[key].push({name: val, unit: 'Unidades'});
+            else catalogs[key].push(val);
+            saveCatalogs(catalogs);
+            closeModal();
+            renderApp();
+            showToast('Añadido con éxito', 'success');
+        }
+
+        function removeCatalogItem(key, idx) {
+            const catalogs = getCatalogs();
+            catalogs[key].splice(idx, 1);
+            saveCatalogs(catalogs);
+            renderApp();
+            showToast('Eliminado', 'success');
+        }
+
+        function openUserModal(userId = null) {
+            const users = getUsers();
+            const user = userId ? users.find(u => u.id === userId) : { id: `u${Date.now()}`, name: '', email: '', pass: 'winet2026', role: 'supervisor', phone: '', docId: '', avatar: '' };
+            const isNew = !userId;
+            
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] max-h-[90vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-[#122b1c]">
+                        <h3 class="font-bold text-slate-800 dark:text-white">${isNew ? 'Nuevo Usuario' : 'Editar Usuario'}</h3>
+                        <button onclick="closeModal()" class="text-slate-400"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="saveUser(event, '${user.id}', ${isNew})" class="space-y-4 text-sm">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Nombre Completo</label>
+                            <input type="text" id="u-name" required value="${user.name}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Correo Electrónico</label>
+                            <input type="email" id="u-email" required value="${user.email}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">DNI / Carnet</label>
+                                <input type="text" id="u-doc" required value="${user.docId || ''}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">Teléfono</label>
+                                <input type="text" id="u-phone" required value="${user.phone || ''}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none font-mono">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">Contraseña</label>
+                                <input type="text" id="u-pass" required value="${user.pass}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">Rol</label>
+                                <select id="u-role" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                                    <option value="supervisor" ${user.role === 'supervisor' ? 'selected' : ''}>Supervisor</option>
+                                    <option value="noc" ${user.role === 'noc' ? 'selected' : ''}>NOC</option>
+                                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">URL Avatar</label>
+                            <input type="url" id="u-avatar" value="${user.avatar || ''}" class="w-full bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none font-mono">
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="closeModal()" class="px-5 py-2 text-slate-600 rounded-xl text-sm font-bold">Cancelar</button>
+                            <button type="submit" class="px-5 py-2 bg-winet-600 text-white rounded-xl text-sm font-bold">Guardar</button>
+                        </div>
+                    </form>
+                </div>
+            `);
+        }
+
+        function saveUser(e, id, isNew) {
+            e.preventDefault();
+            const users = getUsers();
+            const newUser = {
+                id: id,
+                name: document.getElementById('u-name').value.trim(),
+                email: document.getElementById('u-email').value.trim(),
+                pass: document.getElementById('u-pass').value.trim(),
+                role: document.getElementById('u-role').value,
+                docId: document.getElementById('u-doc').value.trim(),
+                phone: document.getElementById('u-phone').value.trim(),
+                avatar: document.getElementById('u-avatar').value.trim() || `https://placehold.co/150x150/16a34a/ffffff?text=U`
+            };
+
+            if (isNew) users.push(newUser);
+            else {
+                const idx = users.findIndex(u => u.id === id);
+                if (idx > -1) users[idx] = newUser;
+            }
+
+            saveUsers(users);
+            const current = getCurrentUser();
+            if (current && current.id === id) setCurrentUser(newUser);
+
+            closeModal();
+            renderApp();
+            showToast('Usuario guardado', 'success');
+        }
+
+        function deleteUser(id) {
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] text-center">
+                    <h3 class="font-bold text-slate-800 dark:text-white mb-2">Eliminar Usuario</h3>
+                    <p class="text-sm text-slate-500 mb-6">¿Desea eliminar este usuario?</p>
+                    <div class="flex justify-center gap-3">
+                        <button onclick="closeModal()" class="px-5 py-2 text-slate-600 font-bold rounded-xl bg-slate-100">Cancelar</button>
+                        <button onclick="confirmDeleteUser('${id}')" class="px-5 py-2 bg-rose-600 text-white font-bold rounded-xl">Eliminar</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function confirmDeleteUser(id) {
+            saveUsers(getUsers().filter(u => u.id !== id));
+            closeModal();
+            renderApp();
+            showToast('Usuario eliminado', 'success');
+        }
+
+        function exportToCSV() {
+            const tickets = getTickets();
+            if(tickets.length === 0) return showToast('No hay datos', 'error');
+            const headers = ['ID Ticket', 'Fecha Solicitud', 'Estado', 'Clientes', 'Nodo', 'Distrito', 'Supervisor', 'Contratista'];
+            const rows = tickets.map(t => [t.id, t.requestDate || '', t.status, t.affectedClients, t.nodo, t.distrito, t.supervisor || '', t.contractor || '']);
+            const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.map(String).map(s=>`"${s.replace(/"/g, '""')}"`).join(','))].join('\n');
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", `WINET_PEXT_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('CSV Descargado', 'success');
+        }
+
+        function openClosureModal(id) {
+            const catalogs = getCatalogs();
+            tempMaterials = [];
+            
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c] max-h-[95vh] flex flex-col">
+                    <div class="flex justify-between items-center mb-5 pb-3 border-b border-slate-100 dark:border-[#122b1c] flex-shrink-0">
+                        <h3 class="text-lg font-bold text-slate-800 dark:text-white">Cerrar Avería • <span class="text-winet-600 font-mono">${id}</span></h3>
+                        <button onclick="closeModal()" class="text-slate-400"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="handleClosure(event, '${id}')" class="space-y-4 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                        <div class="grid grid-cols-2 gap-3">
+                            ${renderInputGroup('Hora Inicio Trabajo', 'cl-start', 'time')}
+                            ${renderInputGroup('Hora Fin Trabajo', 'cl-end', 'time')}
+                        </div>
+                        ${renderInputGroup('Causa Raíz', 'cl-cause', 'select', catalogs.causes)}
+                        ${renderInputGroup('Solución Aplicada', 'cl-sol', 'select', catalogs.solutions)}
+                        
+                        <div class="p-4 bg-slate-50 dark:bg-[#020503] rounded-xl border border-slate-200 dark:border-[#122b1c] space-y-3">
+                            <label class="block text-xs font-bold text-slate-700 dark:text-stone-300 uppercase">Materiales Utilizados</label>
+                            
+                            <div class="flex gap-2">
+                                <select id="mat-select" class="flex-1 bg-white dark:bg-[#0a110c] border border-slate-300 dark:border-[#122b1c] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                                    <option value="">Seleccione Material...</option>
+                                    ${catalogs.materials.map(m => `<option value="${m.name}">${m.name} (${m.unit})</option>`).join('')}
+                                </select>
+                                <input type="number" id="mat-qty" placeholder="Cant." min="1" class="w-20 bg-white dark:bg-[#0a110c] border border-slate-300 dark:border-[#122b1c] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none">
+                                <button type="button" onclick="addClosureMaterial()" class="px-3 py-2 bg-slate-200 dark:bg-[#122b1c] text-slate-800 dark:text-white rounded-lg font-bold text-sm">+</button>
+                            </div>
+                            
+                            <div id="closure-materials-list" class="space-y-2 mt-3 max-h-[150px] overflow-y-auto">
+                                <p class="text-xs text-slate-500 italic">No hay materiales registrados.</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-2">
+                            <button type="button" onclick="toggleGisClosureSection()" id="btn-toggle-gis" class="w-full py-2 bg-slate-100 dark:bg-[#122b1c] text-slate-700 dark:text-winet-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-dashed border-slate-300">
+                                <i data-lucide="map-pin" class="w-4 h-4"></i> + Añadir Reporte GIS Catastro (Opcional)
+                            </button>
+                            <div id="gis-closure-section" class="hidden mt-3 p-4 bg-slate-50 dark:bg-[#020503] rounded-xl border border-slate-200 dark:border-[#122b1c] space-y-3">
+                                <div class="text-xs font-bold text-winet-600 mb-1">Reporte GIS Catastros</div>
+                                ${renderInputGroup('Estado de Actualización', 'cl-gis-status', 'select', ['Actualizado', 'Pendiente', 'Requiere Visita'], '', '', '', false)}
+                                ${renderInputGroup('URL / Ruta KMZ', 'cl-gis-kmz', 'text', null, '', 'Ej. https://gis.winet.pe/...', '', false)}
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                                    <textarea id="cl-gis-obs" rows="2" class="w-full bg-white dark:bg-[#0a110c] border border-slate-300 dark:border-[#122b1c] rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none font-mono"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 mt-4 border-t border-slate-100 dark:border-[#122b1c] flex justify-end gap-3 flex-shrink-0">
+                            <button type="button" onclick="closeModal()" class="px-5 py-2.5 text-sm font-semibold text-slate-600">Cancelar</button>
+                            <button type="submit" class="px-6 py-2.5 bg-winet-600 hover:bg-winet-700 text-white rounded-xl font-bold text-sm flex items-center gap-2 shadow-md">
+                                <i data-lucide="check-circle-2" class="w-4 h-4"></i> Finalizar Ticket
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `);
+        }
+
+        function toggleGisClosureSection() {
+            const section = document.getElementById('gis-closure-section');
+            const btn = document.getElementById('btn-toggle-gis');
+            if(section.classList.contains('hidden')) {
+                section.classList.remove('hidden');
+                btn.innerHTML = `<i data-lucide="minus-circle" class="w-4 h-4"></i> Ocultar GIS Catastro`;
+                btn.className = "w-full py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-600 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-dashed border-rose-300";
+            } else {
+                section.classList.add('hidden');
+                btn.innerHTML = `<i data-lucide="map-pin" class="w-4 h-4"></i> + Añadir Reporte GIS Catastro (Opcional)`;
+                btn.className = "w-full py-2 bg-slate-100 dark:bg-[#122b1c] text-slate-700 dark:text-winet-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-dashed border-slate-300";
+            }
+            lucide.createIcons();
+        }
+
+        function addClosureMaterial() {
+            const select = document.getElementById('mat-select');
+            const qtyInput = document.getElementById('mat-qty');
+            const name = select.value;
+            const qty = parseInt(qtyInput.value);
+
+            if (!name || isNaN(qty) || qty <= 0) return showToast('Seleccione material y cantidad', 'error');
+
+            const existingIdx = tempMaterials.findIndex(m => m.name === name);
+            if (existingIdx > -1) tempMaterials[existingIdx].qty += qty;
+            else tempMaterials.push({ name, qty });
+
+            select.value = '';
+            qtyInput.value = '';
+            renderClosureMaterialsList();
+        }
+
+        function removeClosureMaterial(idx) {
+            tempMaterials.splice(idx, 1);
+            renderClosureMaterialsList();
+        }
+
+        function renderClosureMaterialsList() {
+            const listEl = document.getElementById('closure-materials-list');
+            if (tempMaterials.length === 0) {
+                listEl.innerHTML = '<p class="text-xs text-slate-500 italic">No hay materiales registrados.</p>';
+                return;
+            }
+            listEl.innerHTML = tempMaterials.map((m, idx) => `
+                <div class="flex items-center justify-between bg-white dark:bg-[#0a110c] p-2 rounded border border-slate-200 dark:border-[#122b1c] text-sm">
+                    <span class="text-slate-700 dark:text-stone-300"><strong class="text-slate-900 dark:text-white">${m.qty}x</strong> ${m.name}</span>
+                    <button type="button" onclick="removeClosureMaterial(${idx})" class="text-rose-500 p-1 rounded"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function handleClosure(e, id) {
+            e.preventDefault();
+            const tickets = getTickets();
+            const t = tickets.find(x => x.id === id);
+            t.status = 'finalizado';
+            
+            const safeRead = (elemId) => { const el = document.getElementById(elemId); return el ? el.value : ''; };
+            const isGisShown = document.getElementById('gis-closure-section') && !document.getElementById('gis-closure-section').classList.contains('hidden');
+
+            t.closureData = {
+                startTime: safeRead('cl-start') || '08:00',
+                endTime: safeRead('cl-end') || '10:00',
+                cause: safeRead('cl-cause') || 'Sin Causa',
+                solution: safeRead('cl-sol') || 'Sin Solución',
+                materials: [...tempMaterials],
+                gisCatastro: isGisShown ? { status: safeRead('cl-gis-status'), kmz: safeRead('cl-gis-kmz'), obs: safeRead('cl-gis-obs') } : null,
+                closedAt: new Date().toISOString()
+            };
+            
+            saveTickets(tickets); 
+            showToast(`Ticket ${id} cerrado.`, 'success'); 
+            closeModal(); 
+            renderApp();
+        }
+
+        function viewClosureDetails(id) {
+            const t = getTickets().find(x => x.id === id);
+            if(!t || !t.closureData) return;
+            openModal(`
+                <div class="bg-white dark:bg-[#0a110c] rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-[#122b1c]">
+                    <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-[#122b1c]">
+                        <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2"><i data-lucide="file-check" class="text-winet-500 w-4 h-4"></i> Detalles de Cierre</h3>
+                        <button onclick="closeModal()" class="text-slate-400"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="space-y-4 text-sm text-slate-700 dark:text-stone-300 max-h-[70vh] overflow-y-auto pr-2">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Inicio</span> <span class="font-mono font-bold">${t.closureData.startTime}</span></div>
+                            <div><span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Fin</span> <span class="font-mono font-bold">${t.closureData.endTime}</span></div>
+                        </div>
+                        <div><span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Causa</span><div class="bg-slate-50 dark:bg-[#020503] p-2 rounded-lg text-xs">${t.closureData.cause}</div></div>
+                        <div><span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Solución</span><div class="bg-slate-50 dark:bg-[#020503] p-2 rounded-lg text-xs">${t.closureData.solution}</div></div>
+                        ${t.closureData.materials && t.closureData.materials.length > 0 ? `
+                        <div><span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Materiales</span>
+                        <div class="bg-slate-50 dark:bg-[#020503] p-2 rounded-lg space-y-1">
+                            ${t.closureData.materials.map(m => `<div class="text-xs flex justify-between"><span><strong>${m.qty}x</strong></span> <span>${m.name}</span></div>`).join('')}
+                        </div></div>` : ''}
+                        <div class="pt-3 border-t border-slate-100 dark:border-[#122b1c]">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cierre en Sistema</span>
+                            <span class="font-mono text-xs text-slate-500">${formatCustomDate(t.closureData.closedAt)}</span>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function importExcelDatabase(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            showToast('Procesando archivo Excel...', 'success');
+
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    if(rows.length === 0) return showToast('El archivo Excel está vacío.', 'error');
+
+                    const tickets = getTickets();
+                    let importedCount = 0;
+
+                    rows.forEach(row => {
+                        const getVal = (kw) => { const k = Object.keys(row).find(x => kw.some(w => x.toLowerCase().includes(w))); return k ? row[k] : ''; };
+                        const newId = getVal(['id', 'ticket', 'codigo']) || `AVE-${Math.floor(100000 + Math.random() * 900000)}`;
+                        if(tickets.find(t => t.id === String(newId))) return;
+
+                        let lat = parseFloat(getVal(['latitud', 'lat']));
+                        let lng = parseFloat(getVal(['longitud', 'lng', 'lon']));
+                        
+                        tickets.push({
+                            id: String(newId),
+                            requestDate: getVal(['fecha', 'solicitud']) || new Date().toISOString(),
+                            createdAt: new Date().toISOString(),
+                            ticketType: getVal(['tipo', 'averia']) || 'Avería Clientes Loss',
+                            category: getVal(['categoria']) || 'AVERIA',
+                            reportArea: getVal(['area']) || 'Calidad Operativa',
+                            affectedClients: parseInt(getVal(['afectados', 'clientes'])) || 1,
+                            elementType: getVal(['elemento']) || 'CAJA CTO',
+                            elementCode: getVal(['codigo_elemento']) || 'S/N',
+                            coords: { lat: isNaN(lat) ? -12.9897768 : lat, lng: isNaN(lng) ? -77.0909098 : lng },
+                            nodo: getVal(['nodo']) || 'SIN NODO',
+                            project: getVal(['proyecto']) || 'N/A',
+                            distrito: getVal(['distrito']) || 'LIMA',
+                            zone: getVal(['zona']) || 'LIMA',
+                            details: getVal(['detalles', 'observacion']) || 'Importado de Excel',
+                            status: 'pendiente',
+                            closureData: null
+                        });
+                        importedCount++;
+                    });
+
+                    saveTickets(tickets);
+                    showToast(`Importados ${importedCount} tickets.`, 'success');
+                    renderApp();
+                } catch(err) {
+                    showToast('Error leyendo Excel.', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            e.target.value = '';
+        }
+
+        function renderLiquidationView() {
+            const tickets = getTickets().filter(t => t.status === 'finalizado' && t.closureData?.materials?.length > 0);
+            const catalogs = getCatalogs();
+            const filterM = document.getElementById('liq-month')?.value || 'all';
+            const filterY = document.getElementById('liq-year')?.value || '2026';
+            const filterC = document.getElementById('liq-contractor')?.value || 'all';
+
+            const filteredTickets = tickets.filter(t => {
+                if(!t.closureData.closedAt) return false;
+                const d = new Date(t.closureData.closedAt);
+                return (filterM === 'all' || d.getMonth().toString() === filterM) &&
+                       (filterY === 'all' || d.getFullYear().toString() === filterY) &&
+                       (filterC === 'all' || t.contractor === filterC);
+            });
+
+            const materialSummary = {};
+            filteredTickets.forEach(t => {
+                t.closureData.materials.forEach(m => {
+                    materialSummary[m.name] = (materialSummary[m.name] || 0) + parseInt(m.qty);
+                });
+            });
+
+            const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+            return `
+                <div class="max-w-6xl mx-auto space-y-6">
+                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white dark:bg-[#0a110c] p-5 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm gap-4">
+                        <div>
+                            <h2 class="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="calculator" class="text-winet-500"></i> Liquidación de Materiales</h2>
+                            <p class="text-xs text-slate-500 mt-1">Tabla dinámica de consolidación por contratista.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-3">
+                            <select id="liq-contractor" onchange="renderApp()" class="bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-lg px-4 py-2 text-sm font-semibold text-slate-800 dark:text-white focus:outline-none">
+                                <option value="all">Todos los Contratistas</option>
+                                ${catalogs.contractors.map(c => `<option value="${c}" ${filterC===c?'selected':''}>${c}</option>`).join('')}
+                            </select>
+                            <select id="liq-month" onchange="renderApp()" class="bg-slate-50 dark:bg-[#020503] border border-slate-300 dark:border-[#122b1c] rounded-lg px-4 py-2 text-sm font-semibold text-slate-800 dark:text-white focus:outline-none">
+                                <option value="all">Todos los Meses</option>
+                                ${monthNames.map((m, i) => `<option value="${i}" ${filterM===i.toString()?'selected':''}>${m}</option>`).join('')}
+                            </select>
+                            <button onclick="printLiquidationFormat()" class="px-5 py-2 bg-winet-600 hover:bg-winet-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 shadow-md">
+                                <i data-lucide="printer" class="w-4 h-4"></i> Generar Acta
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-1 bg-white dark:bg-[#0a110c] rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm overflow-hidden h-fit">
+                            <div class="p-4 border-b border-slate-200 dark:border-[#122b1c] bg-slate-50 dark:bg-[#030905]">
+                                <h3 class="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">Consolidado Total</h3>
+                            </div>
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead class="bg-slate-50 dark:bg-[#020503]">
+                                    <tr class="text-slate-500 text-xs uppercase"><th class="p-3">Material</th><th class="p-3 text-right">Cant.</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${Object.entries(materialSummary).map(([mat, qty]) => `
+                                        <tr class="border-b border-slate-100 dark:border-[#122b1c]">
+                                            <td class="p-3 text-slate-700 dark:text-stone-300">${mat}</td>
+                                            <td class="p-3 text-right font-black text-winet-600">${qty}</td>
+                                        </tr>
+                                    `).join('') || `<tr><td colspan="2" class="p-6 text-center text-slate-400">Sin datos.</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="lg:col-span-2 bg-white dark:bg-[#0a110c] rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm overflow-hidden">
+                            <div class="p-4 border-b border-slate-200 dark:border-[#122b1c] bg-slate-50 dark:bg-[#030905]">
+                                <h3 class="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">Detalle por Ticket</h3>
+                            </div>
+                            <div class="overflow-x-auto max-h-[500px]">
+                                <table class="w-full text-left border-collapse text-xs whitespace-nowrap">
+                                    <thead class="bg-slate-50 dark:bg-[#020503] sticky top-0">
+                                        <tr class="text-slate-500 uppercase">
+                                            <th class="p-3">Cierre</th><th class="p-3">Ticket ID</th><th class="p-3">Contratista</th><th class="p-3">Material</th><th class="p-3 text-center">Cant</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 dark:divide-[#122b1c]">
+                                        ${filteredTickets.flatMap(t => t.closureData.materials.map(m => `
+                                            <tr>
+                                                <td class="p-3 text-slate-500">${formatCustomDate(t.closureData.closedAt)}</td>
+                                                <td class="p-3 font-mono font-bold text-slate-900 dark:text-white">${t.id}</td>
+                                                <td class="p-3">${t.contractor || 'Interno'}</td>
+                                                <td class="p-3">${m.name}</td>
+                                                <td class="p-3 text-center font-bold text-winet-600">${m.qty}</td>
+                                            </tr>
+                                        `)).join('') || `<tr><td colspan="5" class="p-8 text-center text-slate-400">Sin registros.</td></tr>`}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function printLiquidationFormat() {
+            const filterC = document.getElementById('liq-contractor').value;
+            if (filterC === 'all') return showToast('Seleccione un Contratista específico.', 'error');
+            window.print();
+        }
+
+        let analyticsCharts = [];
+        function renderAnalyticsView() {
+            const tickets = getTickets();
+            const total = tickets.length;
+            const finalized = tickets.filter(t => t.status === 'finalizado').length;
+            const clientsAffected = tickets.reduce((acc, t) => acc + (parseInt(t.affectedClients) || 0), 0);
+            
+            let totalHours = 0, slaTickets = 0;
+            tickets.forEach(t => {
+                if(t.status === 'finalizado' && t.closureData?.closedAt) {
+                    const diff = new Date(t.closureData.closedAt) - new Date(t.requestDate || t.createdAt);
+                    if(diff > 0) { totalHours += (diff / (1000 * 60 * 60)); slaTickets++; }
+                }
+            });
+            const avgSLA = slaTickets > 0 ? (totalHours / slaTickets).toFixed(2) : '0.00';
+
+            return `
+                <div class="space-y-6">
+                    <div class="flex justify-between items-center bg-white dark:bg-[#0a110c] p-5 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm">
+                        <h2 class="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="bar-chart-2" class="text-winet-500"></i> Métricas Analíticas</h2>
+                        <button onclick="exportToCSV()" class="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2">Exportar</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        ${renderKpiCard('Total', total, 'ticket', 'text-blue-500', 'bg-blue-50 text-blue-600 dark:bg-blue-500/10')}
+                        ${renderKpiCard('Finalizados', finalized, 'check-circle-2', 'text-winet-500', 'bg-winet-50 text-winet-600 dark:bg-winet-500/10')}
+                        ${renderKpiCard('SLA', avgSLA + ' H', 'clock', 'text-purple-500', 'bg-purple-50 text-purple-600 dark:bg-purple-500/10')}
+                        ${renderKpiCard('Afectados', clientsAffected.toLocaleString(), 'users', 'text-amber-500', 'bg-amber-50 text-amber-600 dark:bg-amber-500/10')}
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 bg-white dark:bg-[#0a110c] p-6 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm h-[300px]"><canvas id="chart-timeline"></canvas></div>
+                        <div class="bg-white dark:bg-[#0a110c] p-6 rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm h-[300px] flex justify-center"><canvas id="chart-category"></canvas></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function initAnalyticsCharts() {
+            analyticsCharts.forEach(c => c.destroy());
+            analyticsCharts = [];
+            const tickets = getTickets();
+            const catMap = {};
+            tickets.forEach(t => catMap[t.category] = (catMap[t.category]||0) + 1);
+
+            const ctxCat = document.getElementById('chart-category')?.getContext('2d');
+            if(ctxCat) analyticsCharts.push(new Chart(ctxCat, {
+                type: 'doughnut',
+                data: { labels: Object.keys(catMap), datasets: [{ data: Object.values(catMap), backgroundColor: ['#f43f5e', '#a855f7', '#3b82f6', '#f59e0b'] }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            }));
+        }
+
+        function renderQueuesView() {
+            const tickets = getTickets();
+            const users = getUsers();
+            const supervisors = [...new Set([...users.filter(u => u.role !== 'noc').map(u => u.name), ...tickets.map(t => t.supervisor).filter(Boolean)])].sort();
+            const columns = ['Sin Asignar', ...supervisors];
+
+            return `
+                <div class="h-[calc(100vh-140px)] flex flex-col space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2"><i data-lucide="kanban" class="text-winet-500"></i> Colas de Asignación</h2>
+                        <button onclick="switchView('dashboard')" class="px-4 py-2 bg-white dark:bg-[#0a110c] border border-slate-200 dark:border-[#122b1c] rounded-xl text-sm font-semibold shadow-sm">Volver</button>
+                    </div>
+                    
+                    <div class="flex-1 flex gap-5 overflow-x-auto pb-4 custom-scrollbar">
+                        ${columns.map(sup => {
+                            const supTickets = tickets.filter(t => (sup === 'Sin Asignar' && !t.supervisor) || t.supervisor === sup);
+                            return `
+                                <div class="min-w-[420px] w-[450px] max-h-full flex flex-col bg-slate-50 dark:bg-[#050a07] rounded-2xl border border-slate-200 dark:border-[#122b1c] shadow-sm">
+                                    <div class="p-4 border-b border-slate-200 dark:border-[#122b1c] bg-white dark:bg-[#0a110c] rounded-t-2xl flex justify-between items-center sticky top-0 z-10">
+                                        <h3 class="font-bold text-slate-800 dark:text-white text-sm">${sup}</h3>
+                                        <span class="bg-slate-200 dark:bg-[#122b1c] text-xs px-2.5 py-1 rounded-full font-bold">${supTickets.length}</span>
+                                    </div>
+                                    <div class="flex-1 overflow-y-auto p-3 space-y-3">
+                                        ${supTickets.map(t => renderQueueCard(t, supervisors)).join('') || `<div class="text-center text-xs text-slate-400 py-6 border-2 border-dashed border-slate-200 dark:border-[#122b1c] rounded-xl">Sin tickets</div>`}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderQueueCard(t, supervisors) {
+            const refDate = t.requestDate || t.createdAt;
+            const elapsed = getElapsedTime(refDate);
+            let typeStyle = 'bg-rose-100 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400';
+            if (t.ticketType === 'Tickets de Backbone') typeStyle = 'bg-purple-100 text-purple-800 dark:bg-purple-500/10 dark:text-purple-400';
+            if (t.ticketType === 'Tickets de Requerimiento') typeStyle = 'bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-400';
+
+            return `
+                <div class="bg-white dark:bg-[#0a110c] p-4 rounded-xl border border-slate-200 dark:border-[#122b1c] shadow-sm space-y-3 cursor-pointer hover:border-winet-500 transition-all group" onclick="openTicketDetailModal('${t.id}')">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">${t.id}</span>
+                            <div class="text-xs text-slate-500">Req: ${formatCustomDate(t.requestDate || t.createdAt)}</div>
+                        </div>
+                        <span class="text-[10px] px-2 py-0.5 rounded border font-bold ${typeStyle}">${t.ticketType}</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-[#020503] p-2.5 rounded-lg text-xs">
+                        <div><span class="text-[10px] text-slate-400 uppercase">Clientes</span><div class="font-bold text-rose-500">${t.affectedClients}</div></div>
+                        <div><span class="text-[10px] text-slate-400 uppercase">Distrito</span><div class="font-bold uppercase">${t.distrito}</div></div>
+                        <div><span class="text-[10px] text-slate-400 uppercase">Contratista</span><div class="font-bold text-winet-600">${t.contractor || 'N/A'}</div></div>
+                        <div><span class="text-[10px] text-slate-400 uppercase">Brigada</span><div class="font-bold">${t.brigada || 'N/A'}</div></div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1" onclick="event.stopPropagation()">
+                        <span class="font-mono text-xs text-amber-600">⏱ ${elapsed.text}</span>
+                        <select onchange="updateTicketSupervisor('${t.id}', this.value)" class="text-[11px] font-semibold bg-slate-50 dark:bg-[#020503] border border-slate-200 dark:border-[#122b1c] rounded p-1">
+                            <option value="">Sin Asignar</option>
+                            ${supervisors.map(s => `<option value="${s}" ${t.supervisor === s ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div onclick="event.stopPropagation()">
+                        ${t.status !== 'finalizado' ? `<button onclick="openClosureModal('${t.id}')" class="w-full py-1.5 bg-winet-600 text-white rounded-lg text-xs font-bold flex justify-center items-center gap-1">Cerrar Ticket</button>` : `<button onclick="viewClosureDetails('${t.id}')" class="w-full py-1.5 bg-slate-100 dark:bg-[#122b1c] text-xs font-bold">Ver Cierre</button>`}
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateTicketSupervisor(id, sup) {
+            const tickets = getTickets();
+            const t = tickets.find(x => x.id === id);
+            t.supervisor = sup || null;
+            saveTickets(tickets);
+            showToast('Supervisor reasignado', 'success');
+            renderApp();
+        }
+
+        window.onload = function() { renderApp(); };
+    </script>
+</body>
+</html>
